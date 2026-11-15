@@ -1,6 +1,7 @@
 package io.givops.forge.github;
 
 import io.givops.forge.model.ForgeException;
+import io.givops.adapters.FailureCategory;
 import java.net.http.HttpHeaders;
 import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
@@ -75,15 +76,15 @@ final class GitHubErrors {
             }
         }
         return new ForgeException("github_rate_limited", HttpStatus.SERVICE_UNAVAILABLE,
-                GitHubMessages.format("forge.github.rate.limited", java.util.Map.of("guidance", String.valueOf(guidance))));
+                GitHubMessages.format("forge.github.rate.limited", java.util.Map.of("guidance", String.valueOf(guidance))), FailureCategory.TRANSIENT);
     }
 
     static ForgeException unavailable() {
-        return new ForgeException("github_unavailable", HttpStatus.SERVICE_UNAVAILABLE, GitHubMessages.format("forge.gitHubErrors.github.is.temporarily.unavailable"));
+        return new ForgeException("github_unavailable", HttpStatus.SERVICE_UNAVAILABLE, GitHubMessages.format("forge.gitHubErrors.github.is.temporarily.unavailable"), FailureCategory.TRANSIENT);
     }
 
     static ForgeException timeout() {
-        return new ForgeException("github_timeout", HttpStatus.GATEWAY_TIMEOUT, GitHubMessages.format("forge.gitHubErrors.the.github.request.timed.out"));
+        return new ForgeException("github_timeout", HttpStatus.GATEWAY_TIMEOUT, GitHubMessages.format("forge.gitHubErrors.the.github.request.timed.out"), FailureCategory.TRANSIENT);
     }
 
     static ForgeException connectionFailed() {
@@ -104,6 +105,13 @@ final class GitHubErrors {
     }
 
     private static ForgeException remote(String code, String message) {
-        return new ForgeException(code, HttpStatus.BAD_GATEWAY, message);
+        FailureCategory category = switch (code) {
+            case "github_unauthorized", "github_forbidden", "github_not_found" -> FailureCategory.ACCESS_DENIED;
+            case "github_invalid_response", "github_invalid_pagination", "github_repository_identity_mismatch" -> FailureCategory.INVALID_RESPONSE;
+            case "github_transport_failed" -> FailureCategory.TRANSIENT;
+            case "github_api_unsupported" -> FailureCategory.UNSUPPORTED;
+            default -> FailureCategory.INVALID_REQUEST;
+        };
+        return new ForgeException(code, HttpStatus.BAD_GATEWAY, message, category);
     }
 }
