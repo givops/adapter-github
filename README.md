@@ -22,8 +22,8 @@ unsupported review evidence while retaining REST observations. Read the
 
 ## Install
 
-Install the ordinary `target/adapter-github-0.2.0-SNAPSHOT.jar` alongside the matching
-public SDK libraries in the host's adapter directory and restart. Do not install
+Install the ordinary `target/adapter-github-0.2.0-SNAPSHOT.jar` in the host's adapter directory and restart. The host supplies the matching
+SDK libraries; do not bundle duplicate SDK or framework JARs with the provider. Do not install
 both old and new copies of the same adapter. The JAR contains one
 `META-INF/givops-adapter.properties` manifest with `domains=ticketing,forge` and
 Spring Boot auto-configuration. It is a library, not an executable application.
