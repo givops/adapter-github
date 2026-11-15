@@ -1,6 +1,7 @@
 package io.givops.forge.github;
 
 import io.givops.adapters.CapabilityInspection;
+import io.givops.adapters.FailureCategory;
 import io.givops.adapters.CapabilityInspection.State;
 import io.givops.forge.model.ForgeException;
 import io.givops.forge.port.ForgeRequestGate;
@@ -84,7 +85,16 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
                     String normalized = definition.normalizeIssueKey(key, query.projectKey()).orElseThrow(GitHubCredentials::invalid);
                     String number = normalized.substring(normalized.lastIndexOf('#') + 1);
                     var response = transport.getForCheck(urls.rest("/issues/" + number), captured.token(), gate(captured, gate), urls.apiBase());
-                    if (response.status() == 404) { unresolved.add(normalized); continue; }
+                    if (response.status() == 404) {
+                        // A missing issue and revoked Issues permission both appear as 404. Only
+                        // retain an unresolved reference after verifying the collection is readable.
+                        var visibility = transport.get(urls.page("/issues", Map.of("state", "all"), 1, 1),
+                                captured.token(), gate(captured, gate), urls.apiBase());
+                        var visibleIssues = GitHubPayload.array(payload.body(visibility));
+                        if (visibleIssues.size() > 1) throw GitHubErrors.invalidResponse();
+                        gate.acceptedObjects(visibleIssues.size());
+                        unresolved.add(normalized); continue;
+                    }
                     require(response, 200);
                     var node = payload.body(response);
                     if (node.has("pull_request")) { unresolved.add(normalized); continue; }
@@ -301,7 +311,9 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
     private static TicketException limit() { return new TicketException(Code.LIMIT_EXCEEDED,"GitHub ticketing exceeded its resource budget."); }
     private static <T> T translated(Supplier<T> action) {
         try { return action.get(); } catch(ForgeException failure) {
-            Code code=switch(failure.getCode()) {case "github_unauthorized" -> Code.AUTHENTICATION_FAILED; case "github_forbidden" -> Code.AUTHORIZATION_FAILED; case "github_not_found" -> Code.NOT_FOUND;
+            Code code = failure.category() == FailureCategory.ACCESS_DENIED
+                    ? ("github_unauthorized".equals(failure.getCode()) ? Code.AUTHENTICATION_FAILED : Code.AUTHORIZATION_FAILED)
+                    : switch(failure.getCode()) {
                 case "github_rate_limited" -> Code.RATE_LIMITED; case "github_timeout" -> Code.TIMEOUT; case "github_api_unsupported" -> Code.UNSUPPORTED_PROVIDER;
                 case "github_invalid_response","github_invalid_pagination","github_repository_identity_mismatch" -> Code.INVALID_RESPONSE;
                 case "forge_budget_exhausted" -> Code.LIMIT_EXCEEDED; case "github_configuration_invalid" -> Code.INVALID_CONFIGURATION; default -> Code.PROVIDER_ERROR;};
