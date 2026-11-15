@@ -72,9 +72,24 @@ class GitHubTicketAdapterTest {
         assertThat(f.script.requests).allSatisfy(r->assertThat(r.headers().firstValue("X-GitHub-Api-Version")).contains("2026-03-10"));
     }
     @Test void retainsMissingAndPrReferencesAsUnresolved() {
-        var f=new Fixture(r->r.uri().getPath().equals(REPO)?Reply.json(repo()):r.uri().getPath().endsWith("/milestones")?Reply.json(array()):Reply.text(404,Map.of(),"{}"));
+        var f=new Fixture(r->r.uri().getPath().equals(REPO)?Reply.json(repo()):(r.uri().getPath().endsWith("/milestones") || r.uri().getPath().equals(REPO+"/issues"))?Reply.json(array()):Reply.text(404,Map.of(),"{}"));
         var result=f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of("#99"),null)),NOW),new TicketGate()).projects().getFirst();
         assertThat(result.unresolvedKeys()).containsExactly("example/fixture#99");assertThat(result.issues()).isEmpty();
+    }
+    @Test void rejectsAHiddenIssuesCollectionInsteadOfPublishingUnresolvedPrivateReferences() {
+        var f=new Fixture(r->r.uri().getPath().equals(REPO)?Reply.json(repo())
+                :r.uri().getPath().endsWith("/milestones")?Reply.json(array()):Reply.text(404,Map.of(),"{}"));
+        assertCode(()->f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of("#99"),null)),NOW),new TicketGate()),Code.AUTHORIZATION_FAILED);
+        assertThat(f.script.requests).hasSize(4);
+        assertThat(f.script.requests.getLast().uri().getPath()).isEqualTo(REPO+"/issues");
+    }
+    @Test void rejectsHiddenMilestonesAsAccessDenialAfterSuccessfulRepositoryRead() {
+        var f=new Fixture(r->r.uri().getPath().equals(REPO)?Reply.json(repo()):Reply.text(404,Map.of(),"{}"));
+        assertCode(()->f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of(),null)),NOW),new TicketGate()),Code.AUTHORIZATION_FAILED);
+    }
+    @Test void preservesRateLimitClassificationForForbiddenResponsesWithRetryGuidance() {
+        var f=new Fixture(r->Reply.text(403,Map.of("Retry-After",List.of("60")),"{}"));
+        assertCode(()->f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of(),null)),NOW),new TicketGate()),Code.RATE_LIMITED);
     }
     @Test void validatesRepositoryIdentityAndRejectsForeignQualifiedReferences() {
         var f=new Fixture(r->r.uri().getPath().equals(REPO)?Reply.json(repo()):Reply.json(array()));
@@ -114,7 +129,7 @@ class GitHubTicketAdapterTest {
         assertCode(()->f.adapter.read(new ProviderInput(other,List.of(query(Set.of(),null)),NOW),new TicketGate(),access),Code.INVALID_CONFIGURATION);
         assertThat(access.toString()).doesNotContain(TOKEN);assertThat(access.context()).doesNotContain(TOKEN);
     }
-    @ParameterizedTest @CsvSource({"401,AUTHENTICATION_FAILED","403,AUTHORIZATION_FAILED","429,RATE_LIMITED","410,UNSUPPORTED_PROVIDER","503,PROVIDER_ERROR"})
+    @ParameterizedTest @CsvSource({"401,AUTHENTICATION_FAILED","403,AUTHORIZATION_FAILED","404,AUTHORIZATION_FAILED","429,RATE_LIMITED","410,UNSUPPORTED_PROVIDER","503,PROVIDER_ERROR"})
     void mapsRemoteFailuresWithoutReturningRemoteSecrets(int status,Code code) {
         var f=new Fixture(r->Reply.text(status,Map.of(),"sensitive provider details"));
         assertThatThrownBy(()->f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of(),null)),NOW),new TicketGate())).isInstanceOfSatisfying(TicketException.class,e->{assertThat(e.code()).isEqualTo(code);assertThat(e.getMessage()).doesNotContain("sensitive");});
