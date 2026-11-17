@@ -31,7 +31,7 @@ class GitHubTicketAdapterTest {
     static ObjectNode repo() { return repository().put("name","fixture").put("has_issues",true); }
     static ObjectNode milestone(int number,String state) { return JSON.createObjectNode().put("id",9000+number).put("number",number).put("title","Version "+number).put("state",state).put("due_on","2026-12-01T00:00:00Z").put("closed_at","closed".equals(state)?NOW.toString():null); }
     static ObjectNode issue(int number) {
-        var row=JSON.createObjectNode().put("id",1000+number).put("number",number).put("title","Issue "+number).put("body","Description")
+        var row=JSON.createObjectNode().put("id",1000+number).put("number",number).put("title","Issue "+number).put("body","TICKET-BODY-MUST-NOT-SURVIVE")
                 .put("state","open").put("created_at",NOW.toString()).put("updated_at",NOW.toString()).put("html_url","https://untrusted.invalid/issues/1");
         row.putObject("milestone").put("number",3);row.putObject("assignee").put("login","developer");row.putArray("labels").addObject().put("name","bug");return row;
     }
@@ -54,6 +54,15 @@ class GitHubTicketAdapterTest {
         @Override public void check(){}
         @Override public Duration remaining(){return Duration.ofSeconds(20);}
     }
+    @Test void navigatesToBoundProviderSpaceWithoutCollectingContent() {
+        var fixture = new Fixture(request -> { throw new AssertionError("Navigation must not fetch provider data."); });
+        var request = new io.givops.ticketing.model.TicketBrowserModels.BrowserRequest(SOURCE, UUID.randomUUID(), "41", "example/fixture", null, NOW);
+        var access = fixture.adapter.captureAccess(SOURCE);
+        assertThat(fixture.adapter.navigate(request, null, access, new TicketGate()).spaceUrl()).isEqualTo(URI.create("https://github.com/example/fixture/issues"));
+        assertThat(fixture.script.requests).isEmpty();
+        fixture.lease.invalidate();
+        assertThatThrownBy(() -> fixture.adapter.navigate(request, null, access, new TicketGate())).isInstanceOf(TicketException.class);
+    }
     @Test void mapsNativeIssueAndMilestoneWithoutEquatingClosedWithReleasedAndExcludesPulls() {
         var f=new Fixture(request->switch(request.uri().getPath()) {
             case REPO -> Reply.json(repo());
@@ -65,7 +74,7 @@ class GitHubTicketAdapterTest {
         });
         var result=f.adapter.read(new ProviderInput(SOURCE,List.of(query(Set.of("#1","example/fixture#2"),"Version 3")),NOW),new TicketGate()).projects().getFirst();
         assertThat(result.issues()).hasSize(1);var issue=result.issues().getFirst();
-        assertThat(issue.issueKey()).isEqualTo("example/fixture#1");assertThat(issue.description()).isEqualTo("Description");assertThat(issue.labels()).containsExactly("bug");
+        assertThat(issue.issueKey()).isEqualTo("example/fixture#1");assertThat(issue.description()).isNull();assertThat(issue.labels()).containsExactly("bug");
         assertThat(issue.assigneeAccountId()).isEqualTo("developer");assertThat(issue.webUrl()).hasToString("https://github.com/example/fixture/issues/1");
         assertThat(result.unresolvedKeys()).containsExactly("example/fixture#2");assertThat(result.releaseMembership().issues()).containsExactly(issue.identity());
         var milestone=result.versions().getFirst();assertThat(milestone.nativeState()).isEqualTo("closed");assertThat(milestone.released()).isFalse();assertThat(milestone.archived()).isFalse();assertThat(milestone.closedAt()).isEqualTo(NOW);assertThat(milestone.releaseDate()).isEqualTo(LocalDate.of(2026,12,1));

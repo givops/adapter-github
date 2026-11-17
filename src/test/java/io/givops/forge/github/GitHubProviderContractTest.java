@@ -31,7 +31,11 @@ class GitHubProviderContractTest {
                 .hasSingleBean(GitHubTicketDefinition.class).doesNotHaveBean(GitHubTicketAdapter.class);});
         runner.withBean(CredentialHost.class,()->request->AdapterTestkit.lease(Map.of("apiToken",TOKEN),Map.of("baseUrl",request.baseUrl().toString(),"instanceKey",request.instanceKey()),"1"))
                 .withBean(ContextSigner.class,()->AdapterTestkit.signer("synthetic-secret"))
-                .run(context->{assertThat(context).hasNotFailed().hasSingleBean(GitHubTicketAdapter.class);AdapterTestkit.verifyDefinition(context.getBean(GitHubTicketDefinition.class));});
+                .run(context->{assertThat(context).hasNotFailed().hasSingleBean(GitHubTicketAdapter.class)
+                        .hasSingleBean(io.givops.ticketing.port.TicketBrowseAdapter.class)
+                        .hasSingleBean(io.givops.ticketing.port.TicketContentAdapter.class)
+                        .doesNotHaveBean(io.givops.ticketing.port.TicketAssetAdapter.class);
+                    AdapterTestkit.verifyDefinition(context.getBean(GitHubTicketDefinition.class));});
     }
     @Test void scopesNumericReferencesToRepositoryAndRecognizesOnlyIssueUrls() {
         var definition=new GitHubTicketDefinition();AdapterTestkit.verifyDefinition(definition);
@@ -94,5 +98,10 @@ class GitHubProviderContractTest {
         var urls=GitHubUrls.from(source());var row=pull(1,"open",false,41,"topic",A);
         var pull=GitHubPayload.pull(row,GitHubPayload.pullIdentity(row),urls,NOW,new Gate());
         var result=review.read(urls,TOKEN,pull,null,new Gate());assertThat(result.state()).isEqualTo(CapabilityState.UNSUPPORTED);
+    }
+    @Test void preservesFullPullRequestDescription() {
+        var row = pull(1, "open", false, 41, "topic", A).put("body", "FORGE-BODY-MUST-SURVIVE");
+        var result = GitHubPayload.pull(row, GitHubPayload.pullIdentity(row), GitHubUrls.from(source()), NOW, new Gate());
+        assertThat(result.description()).isEqualTo("FORGE-BODY-MUST-SURVIVE");
     }
 }

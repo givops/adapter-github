@@ -1,7 +1,7 @@
 # Compatibility and operations
 
 SDK API compatibility, adapter artifact version, remote API profile and provider
-product version are independent. This release requires SDK API 0.2 and uses Java
+product version are independent. This release requires SDK API 0.3 and uses Java
 25 with Spring Boot 4.0.9. Installing an adapter fix compatible with API 0.2 does
 not require changing host binaries; API changes require a compatible host.
 
@@ -12,6 +12,8 @@ not require changing host binaries; API changes require a compatible host.
 | Pull requests, commit associations, Actions observations | Supported | Supported |
 | Review evidence through GraphQL | Supported | Supported when schema/permissions permit |
 | Native issues, milestones and complete bounded membership | Supported | Supported |
+| Generic ticket browser lists, filters, detail and Markdown | Supported, bounded live reads | Supported, bounded live reads |
+| Immutable ticket attachments | Not implemented | Not implemented |
 | Private repository, open milestone and open issue creation | Supported with permissions | Supported with permissions |
 | Organization/group discovery | Not implemented | Not implemented |
 | Actions mutations, release reports/publication | Not implemented | Not implemented |
