@@ -22,6 +22,24 @@ public final class GitHubForgeInspector implements ForgeCapabilityInspector {
         String profile="github.com".equalsIgnoreCase(source.baseUrl().getHost())?"github-cloud-rest-2026-03-10":"github-enterprise-rest-2022-11-28";
         String context=io.givops.forge.discovery.DiscoveryValues.hash(source.baseUrl()+"\n"+source.forgeId()+"\n"+source.projectId()+"\n"+access.fields());
         if(!new GitHubForgeDefinition().capabilities().contains(capability)) return new CapabilityInspection("GITHUB",capability,State.UNSUPPORTED,"Not implemented",null,profile,context,clock.instant());
+        if ("forge.repository-create".equals(capability)) {
+            if (access.token()==null) return new CapabilityInspection("GITHUB",capability,State.FORBIDDEN,"Authenticated provisioning access required",null,profile,context,clock.instant());
+            try {
+                var api=GitHubUrls.apiBase(source.baseUrl());
+                var response=transport.getForCheck(java.net.URI.create(api+"/user"),access.token(),gate,api);
+                if(response.status()!=200) throw GitHubErrors.remoteStatus(response.status(),response.headers(),response.body());
+                return new CapabilityInspection("GITHUB",capability,State.UNKNOWN,"Owner and repository creation permission require explicit command",
+                        response.headers().firstValue("X-GitHub-Enterprise-Version").orElse(null),profile,context,clock.instant());
+            } catch(ForgeException failure) {
+                State state=switch(failure.getCode()) {
+                    case "github_unauthorized", "github_forbidden" -> State.FORBIDDEN;
+                    case "github_rate_limited", "github_timeout", "github_unavailable", "github_transport_failed" -> State.TEMPORARILY_UNAVAILABLE;
+                    case "github_api_unsupported" -> State.UNSUPPORTED;
+                    default -> State.UNKNOWN;
+                };
+                return new CapabilityInspection("GITHUB",capability,state,failure.getCode(),null,profile,context,clock.instant());
+            }
+        }
         if (source.projectId()==null || source.repositoryPath()==null) return new CapabilityInspection("GITHUB",capability,State.UNKNOWN,"Repository context required",null,profile,context,clock.instant());
         var urls=GitHubUrls.from(source);
         try {

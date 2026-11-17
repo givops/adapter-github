@@ -211,13 +211,7 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
             definition.validateProjectKey(command.projectKey());
             String[] parts = command.projectKey().split("/");
             if (command.leaderExternalId()!=null && !command.leaderExternalId().isBlank() && !parts[0].equalsIgnoreCase(command.leaderExternalId())) throw GitHubCredentials.invalid();
-            URI api = GitHubUrls.apiBase(captured.baseUrl());
-            var user = payload.body(transport.get(URI.create(api+"/user"), captured.token(), gate(captured,gate), api));
-            String endpoint = parts[0].equalsIgnoreCase(GitHubPayload.requiredText(user,"login")) ? "/user/repos" : "/orgs/"+parts[0]+"/repos";
-            var body = mapper.createObjectNode().put("name",parts[1]).put("private",true).put("has_issues",true);
-            if (command.description()!=null) body.put("description",command.description());
-            var response = transport.post(URI.create(api+endpoint), captured.token(), mapper.writeValueAsBytes(body), gate(captured,gate), api);
-            require(response,201); var row = payload.body(response);
+            var row = GitHubRepositories.createProject(transport,mapper,captured.baseUrl(),captured.token(),parts[0],parts[1],command.description(),gate(captured,gate));
             var urls = urls(captured,GitHubPayload.id(row,"id"),command.projectKey());
             return project(row,urls);
         });
@@ -234,8 +228,9 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
     }
     @Override public IssueObservation createIssue(InstanceSource source, RemoteProjectRef project, CreateIssueCommand command, Access access, TicketRequestGate gate) {
         return translated(() -> {
-            if (command.summary()==null || command.summary().isBlank() || command.fixVersions().size()>1
-                    || command.workflowState()!=null && command.workflowState()!=WorkflowState.OPEN
+            if (command.summary()==null || command.summary().isBlank() || command.fixVersions().size()+command.versionSelectors().size()>1
+                    || !command.fixVersions().isEmpty() && !command.versionSelectors().isEmpty()
+                    || command.workflowState()!=null && command.workflowState()!=WorkflowState.OPEN && command.workflowState()!=WorkflowState.DONE
                     || command.providerStatus()!=null || command.providerPriority()!=null
                     || command.priority()!=null && command.priority()!=PriorityLevel.NORMAL
                     || command.providerType()!=null || command.type()!=null && command.type()!=IssueKind.TASK) throw GitHubCredentials.invalid();
@@ -243,7 +238,21 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
             project(get(urls,"",captured,gate),urls);
             var body = mapper.createObjectNode().put("title",command.summary());
             if(command.description()!=null) body.put("body",command.description());
-            if(!command.fixVersions().isEmpty()) { String version=command.fixVersions().getFirst(); if(!GitHubUrls.validId(version)) throw GitHubCredentials.invalid(); body.put("milestone",Long.parseLong(version)); }
+            if(!command.fixVersions().isEmpty() || !command.versionSelectors().isEmpty()) {
+                String version;
+                if (!command.fixVersions().isEmpty()) version = command.fixVersions().getFirst();
+                else {
+                    var selector = command.versionSelectors().getFirst();
+                    var matches = milestones(urls,captured,gate).stream().filter(v -> switch(selector.kind()) {
+                        case NAME -> selector.value().equals(v.name());
+                        case EXTERNAL_ID -> selector.value().equals(v.externalVersionId());
+                    }).toList();
+                    if(matches.size()!=1) throw GitHubCredentials.invalid();
+                    version=matches.getFirst().externalVersionId();
+                }
+                if(!GitHubUrls.validId(version)) throw GitHubCredentials.invalid();
+                body.put("milestone",Long.parseLong(version));
+            }
             String assignee=command.assigneeExternalId();
             if(command.assignToSelf()) {
                 URI api=urls.apiBase();
@@ -251,7 +260,18 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
                 assignee=GitHubPayload.requiredText(user,"login");
             }
             if(assignee!=null) { if(!assignee.matches("[A-Za-z0-9-]{1,100}")) throw GitHubCredentials.invalid(); body.putArray("assignees").add(assignee); }
-            return issue(post(urls,"/issues",body,captured,gate),urls);
+            var created=issue(post(urls,"/issues",body,captured,gate),urls);
+            if(command.workflowState()!=WorkflowState.DONE) return created;
+            String suffix="/issues/"+created.issueKey().substring(created.issueKey().lastIndexOf('#')+1);
+            ForgeException closeFailure=null;
+            try {
+                var response=transport.patch(urls.rest(suffix),captured.token(),mapper.writeValueAsBytes(Map.of("state","closed")),gate(captured,gate),urls.apiBase());
+                require(response,200);
+            } catch(ForgeException failure) { closeFailure=failure; }
+            var actual=issue(get(urls,suffix,captured,gate),urls);
+            if(!created.identity().equals(actual.identity()) || !created.issueKey().equals(actual.issueKey())) throw GitHubErrors.identityMismatch();
+            if(!"closed".equals(actual.status())) { if(closeFailure!=null) throw closeFailure; throw GitHubErrors.invalidResponse(); }
+            return actual;
         });
     }
     private JsonNode post(GitHubUrls urls,String suffix,JsonNode body,GitHubCredentials.Captured captured,TicketRequestGate gate) {

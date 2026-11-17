@@ -1,7 +1,7 @@
 # Compatibility and operations
 
 SDK API compatibility, adapter artifact version, remote API profile and provider
-product version are independent. This release requires SDK API 0.3 and uses Java
+product version are independent. This release requires SDK API 0.4 and uses Java
 25 with Spring Boot 4.0.9. Installing an adapter fix compatible with API 0.2 does
 not require changing host binaries; API changes require a compatible host.
 
