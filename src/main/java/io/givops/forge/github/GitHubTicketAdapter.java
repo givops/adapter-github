@@ -1,5 +1,9 @@
 package io.givops.forge.github;
 
+import io.givops.ticketing.model.TicketBrowserModels.*;
+import io.givops.ticketing.port.TicketNavigationAdapter;
+import io.givops.ticketing.port.TicketBrowseAdapter;
+import io.givops.ticketing.port.TicketContentAdapter;
 import io.givops.adapters.CapabilityInspection;
 import io.givops.adapters.FailureCategory;
 import io.givops.adapters.CapabilityInspection.State;
@@ -49,7 +53,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /** Native issues and milestones. Pull requests remain exclusively in forge observations. */
-public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketWriteAdapter, TicketCapabilityInspector {
+public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketWriteAdapter, TicketCapabilityInspector, TicketNavigationAdapter, TicketBrowseAdapter, TicketContentAdapter {
     private final GitHubCredentials credentials;
     private final TicketProperties limits;
     private final GitHubTransport transport;
@@ -199,7 +203,7 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
                 GitHubPayload.instant(row,"created_at",true), GitHubPayload.instant(row,"updated_at",true), GitHubPayload.instant(row,"closed_at",false),
                 GitHubPayload.absent(milestone) ? List.of() : List.of(GitHubPayload.id(milestone,"number")), URI.create(urls.webUrl("/issues/"+number)),
                 clock.instant(), GitHubPayload.absent(row.get("assignee")) ? null : GitHubPayload.text(row.get("assignee"),"login"),
-                GitHubPayload.text(row,"body"), labels);
+                null, labels);
     }
     @Override public ProjectObservation createProject(InstanceSource source, CreateProjectCommand command, Access access, TicketRequestGate gate) {
         return translated(() -> {
@@ -319,5 +323,173 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
                 case "forge_budget_exhausted" -> Code.LIMIT_EXCEEDED; case "github_configuration_invalid" -> Code.INVALID_CONFIGURATION; default -> Code.PROVIDER_ERROR;};
             throw new TicketException(code,failure.getMessage());
         }
+    }
+    private static final BrowseDescriptor BROWSER = new BrowseDescriptor(
+            List.of("text:key-title-literal-nfc", "statuses", "categories", "labels:any"),
+            List.of(Lifecycle.ACTIVE), List.of("key-asc", "key-desc", "updated-desc"), false, true, false);
+
+    @Override public BrowseDescriptor describe(BrowserRequest request, Access access, TicketRequestGate gate) {
+        gate.check();
+        var captured = credentials.require(request.source(), access, false);
+        urls(captured, request.externalProjectId(), request.projectKey());
+        liveRevision(request, access);
+        return BROWSER;
+    }
+
+    @Override public TicketPage list(BrowserRequest request, BrowseQuery query, Access access, TicketRequestGate gate) {
+        return translated(() -> {
+            describe(request, access, gate);
+            validateBrowseQuery(query);
+            var revision = liveRevision(request, access);
+            String scope = browserHash(revision.value(), query.text(), query.lifecycle(), String.join("\u0000", query.statuses()),
+                    String.join("\u0000", query.categories()), String.join("\u0000", query.labels()), query.sort(), query.pageSize());
+            int offset = browseOffset(query.continuation(), scope);
+            var captured = credentials.require(request.source(), access, false);
+            var urls = urls(captured, request.externalProjectId(), request.projectKey());
+            browserProject(urls, captured, gate);
+            // REST labels are conjunctive; complete bounded enumeration gives the SDK's OR semantics.
+            var matches = new ArrayList<TicketSummary>();
+            var keys = new java.util.HashSet<String>();
+            String search = normalized(query.text());
+            for (var row : pages(urls, "/issues", Map.of("state", "all"), captured, gate)) {
+                gate.check();
+                if (row.has("pull_request")) continue;
+                var item = browserSummary(request, row, urls, revision);
+                if (!keys.add(item.displayKey())) throw GitHubErrors.invalidPagination();
+                if ((!search.isEmpty() && !normalized(item.displayKey()).contains(search) && !normalized(item.title()).contains(search))
+                        || !query.statuses().isEmpty() && !query.statuses().contains(item.nativeStatus())
+                        || !query.categories().isEmpty() && !query.categories().contains(item.category())
+                        || !query.labels().isEmpty() && query.labels().stream().noneMatch(item.labels()::contains)) continue;
+                matches.add(item);
+            }
+            java.util.Comparator<TicketSummary> byNumber = java.util.Comparator.comparingLong(
+                    item -> Long.parseLong(item.displayKey().substring(item.displayKey().lastIndexOf('#') + 1)));
+            matches.sort(switch (query.sort()) {
+                case "key-desc" -> byNumber.reversed();
+                case "updated-desc" -> java.util.Comparator.comparing(TicketSummary::updatedAt).reversed().thenComparing(byNumber);
+                default -> byNumber;
+            });
+            if (offset > matches.size()) throw new TicketException(Code.STALE_CONTEXT, "GitHub ticket results changed; reload the list.");
+            int end = Math.min(matches.size(), offset + query.pageSize());
+            credentials.require(request.source(), captured, false);
+            gate.check();
+            return new TicketPage(matches.subList(offset, end), end < matches.size() ? "v1:" + scope + ":" + end : null,
+                    (long) matches.size(), revision, request.capturedAt(), query);
+        });
+    }
+
+    @Override public TicketDetail detail(BrowserRequest request, TicketRef ticket, Access access, TicketRequestGate gate) {
+        return translated(() -> {
+            describe(request, access, gate);
+            var captured = credentials.require(request.source(), access, false);
+            var urls = urls(captured, request.externalProjectId(), request.projectKey());
+            var row = browserIssue(request, ticket, urls, captured, gate);
+            var observation = issue(row, urls);
+            var summary = browserSummary(request, row, urls, liveRevision(request, access));
+            credentials.require(request.source(), captured, false);
+            gate.check();
+            return new TicketDetail(summary, observation.createdAt(), observation.assigneeAccountId(), observation.releaseVersionIds(),
+                    new Navigation(URI.create(urls.webUrl("/issues")), summary.webUrl()));
+        });
+    }
+
+    @Override public TicketContent content(BrowserRequest request, TicketRef ticket, Access access, TicketRequestGate gate) {
+        return translated(() -> {
+            describe(request, access, gate);
+            var captured = credentials.require(request.source(), access, false);
+            var urls = urls(captured, request.externalProjectId(), request.projectKey());
+            var row = browserIssue(request, ticket, urls, captured, gate);
+            String body = java.util.Objects.toString(GitHubPayload.text(row, "body"), "");
+            if (body.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 1024 * 1024) throw limit();
+            credentials.require(request.source(), captured, false);
+            gate.check();
+            return new TicketContent(ticket, liveRevision(request, access), ContentFormat.MARKDOWN, body, List.of(), List.of());
+        });
+    }
+
+    private JsonNode browserIssue(BrowserRequest request, TicketRef ticket, GitHubUrls urls,
+                                  GitHubCredentials.Captured captured, TicketRequestGate gate) {
+        if (ticket == null || !request.source().instanceId().equals(ticket.instanceId())
+                || !request.externalProjectId().equals(ticket.externalProjectId()) || !GitHubUrls.validId(ticket.externalIssueId()))
+            throw GitHubCredentials.invalid();
+        browserProject(urls, captured, gate);
+        // Stable database IDs are not issue numbers. Resolve within the authorized repository first.
+        for (var row : pages(urls, "/issues", Map.of("state", "all"), captured, gate)) {
+            gate.check();
+            if (row.has("pull_request") || !ticket.externalIssueId().equals(GitHubPayload.id(row, "id"))) continue;
+            issue(row, urls);
+            String number = GitHubPayload.id(row, "number");
+            var detail = get(urls, "/issues/" + number, captured, gate);
+            gate.acceptedObjects(1);
+            if (!ticket.externalIssueId().equals(GitHubPayload.id(detail, "id"))
+                    || !number.equals(GitHubPayload.id(detail, "number"))) throw GitHubErrors.identityMismatch();
+            issue(detail, urls);
+            return detail;
+        }
+        throw new TicketException(Code.NOT_FOUND, "GitHub ticket was not found in the bound repository.");
+    }
+
+    private void browserProject(GitHubUrls urls, GitHubCredentials.Captured captured, TicketRequestGate gate) {
+        var row = get(urls, "", captured, gate);
+        project(row, urls);
+        if (Boolean.FALSE.equals(GitHubPayload.flag(row, "has_issues")))
+            throw new TicketException(Code.DISABLED, "GitHub repository issues are disabled.");
+    }
+
+    private TicketSummary browserSummary(BrowserRequest request, JsonNode row, GitHubUrls urls, SourceRevision revision) {
+        var observation = issue(row, urls);
+        Outcome outcome = "open".equals(observation.status()) ? Outcome.OPEN
+                : "not_planned".equals(GitHubPayload.text(row, "state_reason")) ? Outcome.CANCELLED
+                : "completed".equals(GitHubPayload.text(row, "state_reason")) ? Outcome.SUCCEEDED : Outcome.UNKNOWN;
+        return new TicketSummary(new TicketRef(request.source().instanceId(), request.externalProjectId(), observation.identity().externalIssueId()),
+                observation.issueKey(), observation.summary(), observation.status(), "issue", Lifecycle.ACTIVE, outcome,
+                observation.labels(), observation.webUrl(), observation.updatedAt(), true, revision);
+    }
+
+    private static SourceRevision liveRevision(BrowserRequest request, Access access) {
+        if (request.capturedAt() == null) throw GitHubCredentials.invalid();
+        var revision = new SourceRevision("github-live", browserHash(request.source().instanceId(), request.source().revision(),
+                request.ticketProjectId(), request.externalProjectId(), request.projectKey(), access.context()), false);
+        if (request.revision() != null && !revision.equals(request.revision()))
+            throw new TicketException(Code.STALE_CONTEXT, "GitHub browser context changed; reload the list.");
+        return revision;
+    }
+
+    private static String browserHash(Object... values) {
+        try {
+            var digest = java.security.MessageDigest.getInstance("SHA-256");
+            for (Object value : values) {
+                byte[] bytes = String.valueOf(value).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.length).array());
+                digest.update(bytes);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    private static int browseOffset(String cursor, String scope) {
+        if (cursor == null) return 0;
+        String prefix = "v1:" + scope + ":";
+        if (!cursor.startsWith(prefix) || !cursor.substring(prefix.length()).matches("[1-9][0-9]{0,8}")) throw GitHubCredentials.invalid();
+        return Integer.parseInt(cursor.substring(prefix.length()));
+    }
+
+    private static void validateBrowseQuery(BrowseQuery query) {
+        if (query == null || query.lifecycle() != Lifecycle.ACTIVE || !BROWSER.sorts().contains(query.sort())) throw GitHubCredentials.invalid();
+        for (var values : List.of(query.statuses(), query.categories(), query.labels()))
+            for (String value : values) if (value.isBlank() || value.length() > 256 || value.codePoints().anyMatch(Character::isISOControl))
+                throw GitHubCredentials.invalid();
+    }
+
+    private static String normalized(String text) {
+        return java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
+    }
+
+    /** Provider-space navigation is available independently of rich content; global IDs cannot infer issue numbers. */
+    @Override public Navigation navigate(BrowserRequest request, TicketRef ticket, Access access, TicketRequestGate gate) {
+        gate.check();
+        var captured = credentials.require(request.source(), access, false);
+        var urls = urls(captured, request.externalProjectId(), request.projectKey());
+        return new Navigation(URI.create(urls.webUrl("/issues")), null);
     }
 }
