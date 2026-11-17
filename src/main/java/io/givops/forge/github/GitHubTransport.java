@@ -59,6 +59,9 @@ final class GitHubTransport implements AutoCloseable {
     Response post(URI uri, String token, byte[] body, ForgeRequestGate gate, URI apiBase) {
         return request(uri, token, body, gate, apiBase, "POST", false);
     }
+    Response patch(URI uri, String token, byte[] body, ForgeRequestGate gate, URI apiBase) {
+        return request(uri, token, body, gate, apiBase, "PATCH", false);
+    }
     Response graphQl(GitHubUrls urls, String token, byte[] query, ForgeRequestGate gate) {
         if (token == null) throw GitHubErrors.invalidConfiguration();
         URI api = urls.cloud() ? urls.apiBase() : URI.create(urls.baseUrl() + "/api");

@@ -23,6 +23,7 @@ public class GitHubConfiguration {
     }
     @Bean GitHubAdapter gitHubAdapter(ForgeProperties limits,GitHubTransport transport,JsonMapper mapper,Clock clock) { return new GitHubAdapter(limits,transport,mapper,clock); }
     @Bean GitHubConnectionProbe gitHubConnectionProbe(GitHubTransport transport,JsonMapper mapper,Clock clock) { return new GitHubConnectionProbe(transport,mapper,clock); }
+    @Bean GitHubRepositories gitHubProvisioningAdapter(GitHubTransport transport, JsonMapper mapper) { return new GitHubRepositories(transport,mapper); }
     @Bean GitHubRepositoryIdentity gitHubRepositoryIdentity(GitHubTransport transport,JsonMapper mapper) { return new GitHubRepositoryIdentity(transport,mapper); }
     @Bean GitHubDiscovery gitHubDiscovery(GitHubTransport transport,JsonMapper mapper) { return new GitHubDiscovery(transport,mapper); }
     @Bean GitHubForgeInspector gitHubForgeInspector(GitHubTransport transport,JsonMapper mapper,Clock clock) { return new GitHubForgeInspector(transport,mapper,clock); }

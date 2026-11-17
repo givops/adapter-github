@@ -157,6 +157,36 @@ class GitHubTicketAdapterTest {
         var unknown=new Fixture(r->Reply.json(repo()));
         assertThat(unknown.adapter.inspect(SOURCE,"41","ticketing.issue-create",unknown.adapter.captureAccess(SOURCE),new TicketGate()).state()).isEqualTo(State.UNKNOWN);
     }
+    @Test void createsDoneThroughOnePatchAndFreshReadWithTypedMilestoneNumber() {
+        var closed=new java.util.concurrent.atomic.AtomicBoolean();
+        var f=new Fixture(r -> {
+            if(r.uri().getPath().equals(REPO)) return Reply.json(repo());
+            if(r.uri().getPath().endsWith("/milestones")) return Reply.json(array(milestone(3,"open")));
+            if(r.method().equals("POST")) {assertThat(requestJson(r).path("milestone").asInt()).isEqualTo(3);return Reply.text(201,Map.of(),JSON.writeValueAsString(issue(1)));}
+            if(r.method().equals("PATCH")) {closed.set(true);assertThat(requestJson(r).path("state").asString()).isEqualTo("closed");return Reply.json(issue(1).put("state","closed"));}
+            return Reply.json(issue(1).put("state",closed.get()?"closed":"open"));
+        });
+        var project=new RemoteProjectRef(UUID.randomUUID(),SOURCE.instanceId(),"41","example/fixture","Fixture",1);
+        var command=new CreateIssueCommand("Done issue",null,IssueKind.TASK,null,WorkflowState.DONE,null,null,null,List.of(),false,null,List.of(new VersionSelector(VersionSelectorKind.EXTERNAL_ID,"3")));
+        assertThat(f.adapter.createIssue(SOURCE,project,command,f.adapter.captureAccess(SOURCE),new TicketGate()).status()).isEqualTo("closed");
+        assertThat(f.script.requests).extracting(java.net.http.HttpRequest::method).containsExactly("GET","GET","POST","PATCH","GET");
+    }
+    @Test void reconcilesUncertainCloseWithoutReplayingAndRejectsProgressBeforeMutation() {
+        var f=new Fixture(r -> {
+            if(r.uri().getPath().equals(REPO)) return Reply.json(repo());
+            if(r.method().equals("POST")) return Reply.text(201,Map.of(),JSON.writeValueAsString(issue(1)));
+            if(r.method().equals("PATCH")) return Reply.text(503,Map.of(),"sensitive provider details");
+            return Reply.json(issue(1).put("state","closed"));
+        });
+        var project=new RemoteProjectRef(UUID.randomUUID(),SOURCE.instanceId(),"41","example/fixture","Fixture",1);
+        var access=f.adapter.captureAccess(SOURCE);
+        var done=new CreateIssueCommand("Done issue",null,IssueKind.TASK,null,WorkflowState.DONE,null,null,null,List.of(),false,null);
+        assertThat(f.adapter.createIssue(SOURCE,project,done,access,new TicketGate()).status()).isEqualTo("closed");
+        assertThat(f.script.requests).extracting(java.net.http.HttpRequest::method).containsExactly("GET","POST","PATCH","GET");
+        var progress=new CreateIssueCommand("Issue",null,IssueKind.TASK,null,WorkflowState.IN_PROGRESS,null,null,null,List.of(),false,null);
+        assertCode(() -> f.adapter.createIssue(SOURCE,project,progress,access,new TicketGate()),Code.INVALID_CONFIGURATION);
+        assertThat(f.script.requests).hasSize(4);
+    }
     @Test void createsOnlyExplicitNativeRepositoryMilestoneAndIssueCommands() {
         var f=new Fixture(r->{if(r.method().equals("GET")) return Reply.json(r.uri().getPath().equals("/user")?JSON.createObjectNode().put("login","example"):repo());
             JsonNode body=requestJson(r);

@@ -20,7 +20,7 @@ public final class GitHubForgeDefinition implements ForgeProviderDefinition {
     @Override public String adapterId() { return shared.adapterId(); }
     @Override public String adapterVersion() { return shared.adapterVersion(); }
     @Override public List<String> apiProfiles() { return shared.apiProfiles(); }
-    @Override public List<String> capabilities() { return List.of("forge.read", "forge.branch-pipeline", "forge.repository-identity", "forge.project-discovery"); }
+    @Override public List<String> capabilities() { return List.of("forge.read", "forge.branch-pipeline", "forge.repository-create", "forge.repository-identity", "forge.project-discovery"); }
     @Override public List<CredentialField> credentialFields() { return shared.credentialFields(); }
     @Override public URI normalizeBaseUrl(URI value) { return shared.normalizeBaseUrl(value); }
     @Override public Map<String,String> validateCredentials(CredentialRequest target,Map<String,String> fields) { return shared.validateCredentials(target,fields); }
