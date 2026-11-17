@@ -119,7 +119,7 @@ sanitization and external-image restrictions.
 Provider protocol reference: [GitHub REST issues](https://docs.github.com/en/rest/issues/issues).
 
 The SDK source pin selects public commit
-[`18a1a9c1103d2b8793f900769c389771c1debded`](https://github.com/givops/adapter-sdk/commit/18a1a9c1103d2b8793f900769c389771c1debded),
+[`ad5dc81e0378d31a8cb4e80a531dee559adea648`](https://github.com/givops/adapter-sdk/commit/ad5dc81e0378d31a8cb4e80a531dee559adea648),
 which supplies API 0.3. The repository's default build uses that public SDK source;
 no unpublished SDK checkout is required. Browser support is available on the
 `task/provider-browser` source branch. The artifact remains a development snapshot.
