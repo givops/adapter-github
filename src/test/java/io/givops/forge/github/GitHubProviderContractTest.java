@@ -24,6 +24,24 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import tools.jackson.databind.json.JsonMapper;
 
 class GitHubProviderContractTest {
+    @Test void artifactMetadataMatchesBothRegisteredDomainsAndExactSdkApi() throws Exception {
+        var metadata = new java.util.Properties();
+        try (var stream = getClass().getResourceAsStream("/META-INF/givops-adapter.properties")) {
+            assertThat(stream).isNotNull();
+            metadata.load(stream);
+        }
+        var ticketing = new GitHubTicketDefinition();
+        var forge = new GitHubForgeDefinition();
+        assertThat(metadata.getProperty("domains")).isEqualTo("ticketing,forge");
+        assertThat(metadata.getProperty("adapterId")).isEqualTo(ticketing.adapterId()).isEqualTo(forge.adapterId());
+        assertThat(metadata.getProperty("provider")).isEqualTo(ticketing.provider().name()).isEqualTo(forge.provider().name());
+        assertThat(metadata.getProperty("adapterVersion")).isEqualTo("0.5.0-SNAPSHOT")
+                .isEqualTo(ticketing.adapterVersion()).isEqualTo(forge.adapterVersion());
+        assertThat(metadata.getProperty("sdkApiVersion")).isEqualTo("0.5")
+                .isEqualTo(ticketing.sdkApiVersion()).isEqualTo(forge.sdkApiVersion());
+        AdapterTestkit.verifyDefinition(ticketing);
+        AdapterTestkit.verifyDefinition(forge);
+    }
     @Test void exposesBothDomainsFromOneArtifactAndSupportsEitherDomainAlone() {
         var runner=new ApplicationContextRunner().withConfiguration(AutoConfigurations.of(GitHubConfiguration.class))
                 .withBean(JsonMapper.class,()->JSON).withBean(Clock.class,()->Clock.fixed(NOW,ZoneOffset.UTC));
