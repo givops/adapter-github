@@ -6,8 +6,8 @@ Neither building nor testing requires private GivOps source, accounts or fixture
 
 | Component | Version/profile |
 | --- | --- |
-| Adapter artifact | `io.givops:adapter-github:0.4.0-SNAPSHOT` |
-| Public SDK API | `0.4` (exact experimental API level) |
+| Adapter artifact | `io.givops:adapter-github:0.5.0-SNAPSHOT` |
+| Public SDK API | `0.5` (exact experimental API level) |
 | Runtime | Java 25, Spring Boot 4.0.9 |
 | GitHub.com REST | `2026-03-10`, `https://api.github.com` |
 | GitHub Enterprise Server REST | `2022-11-28`, approved web origin + `/api/v3` |
@@ -22,7 +22,7 @@ unsupported review evidence while retaining REST observations. Read the
 
 ## Install
 
-Install the ordinary `target/adapter-github-0.4.0-SNAPSHOT.jar` in the host's adapter directory and restart. The host supplies the matching
+Install the ordinary `target/adapter-github-0.5.0-SNAPSHOT.jar` in the host's adapter directory and restart. The host supplies the matching
 SDK libraries; do not bundle duplicate SDK or framework JARs with the provider. Do not install
 both old and new copies of the same adapter. The JAR contains one
 `META-INF/givops-adapter.properties` manifest with `domains=ticketing,forge` and
@@ -78,10 +78,10 @@ also works. Tests include synthetic payload contracts, full request/response
 scripts and a real loopback HTTP server. They do not contact live GitHub or
 Enterprise accounts. See [contributor instructions](CONTRIBUTING.md).
 
-### SDK API 0.4 compatibility
+### SDK API 0.5 compatibility
 
-This source requires the exact public SDK API 0.4 and artifact version
-0.4.0-SNAPSHOT. Observation acquisition is metadata-only: issue descriptions and
+This source requires the exact public SDK API 0.5 and artifact version
+0.5.0-SNAPSHOT. Observation acquisition is metadata-only: issue descriptions and
 comments are not mapped. Existing creation/write descriptions and forge
 merge-request descriptions retain their existing behavior. The `ticketing.browse`
 and `ticketing.content` capabilities provide lists, detail and on-demand Markdown.
@@ -118,8 +118,10 @@ sanitization and external-image restrictions.
 
 Provider protocol reference: [GitHub REST issues](https://docs.github.com/en/rest/issues/issues).
 
-The SDK source pin selects merged API 0.4 commit `762b642cedc1b82bb4915af56313e6e3c194a04f`.
-Run `./scripts/build.sh` to build and verify against that exact public SDK.
+The API 0.5 source update is pending the merged SDK source pin.
+`sdk-revision.txt` still selects the prior API 0.4 commit
+`762b642cedc1b82bb4915af56313e6e3c194a04f`; use `GIVOPS_SDK_SOURCE` with
+the reviewed API 0.5 source for coordinated verification until the pin is updated.
 The artifact remains a development snapshot; a source pin does not imply a tagged release.
 
 ## Empty repository provisioning
