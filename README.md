@@ -151,5 +151,6 @@ numbers; closed milestones are not reported as released versions.
 Run `./scripts/verify-local.sh` on the final source with Java 25 and Maven 3.9+.
 It builds the public SDK and adapter tests locally; no provider account or private
 repository is required. Record the command and results before merging each PR.
-GitHub Actions is reserved for package releases; verification runs locally.
+Build and test verification runs locally before merging. GitHub Actions runs
+package releases where configured and automatic CodeQL security scans.
 `GIVOPS_MAVEN_REPO` selects the isolated Maven cache used by the build script.
