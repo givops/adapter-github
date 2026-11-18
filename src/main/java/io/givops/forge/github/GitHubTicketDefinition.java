@@ -19,7 +19,7 @@ public final class GitHubTicketDefinition implements TicketProviderDefinition {
     @Override public TicketProvider provider() { return TicketProvider.GITHUB; }
     @Override public String displayName() { return "GitHub"; }
     @Override public String adapterId() { return "io.givops:adapter-github"; }
-    @Override public String adapterVersion() { return "0.4.0-SNAPSHOT"; }
+    @Override public String adapterVersion() { return "0.5.0-SNAPSHOT"; }
     @Override public List<String> capabilities() { return List.of("ticketing.read", "ticketing.navigation", "ticketing.browse", "ticketing.content", "ticketing.version-membership",
             "ticketing.project-create", "ticketing.version-create", "ticketing.issue-create"); }
     @Override public List<String> apiProfiles() { return List.of("github-cloud-rest-2026-03-10", "github-enterprise-rest-2022-11-28"); }
