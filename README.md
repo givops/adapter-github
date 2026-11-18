@@ -144,3 +144,12 @@ an uncertain close is reconciled without replay. No native IN_PROGRESS state is
 invented. Explicit NAME and EXTERNAL_ID version selectors resolve within the bound
 repository to milestone numbers. Legacy `fixVersions` strings remain milestone
 numbers; closed milestones are not reported as released versions.
+
+
+## Local verification before merging
+
+Run `./scripts/verify-local.sh` on the final source with Java 25 and Maven 3.9+.
+It builds the public SDK and adapter tests locally; no provider account or private
+repository is required. Record the command and results before merging each PR.
+GitHub Actions is reserved for package releases; verification runs locally.
+`GIVOPS_MAVEN_REPO` selects the isolated Maven cache used by the build script.

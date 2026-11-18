@@ -21,7 +21,7 @@ bodies. Add representative synthetic responses rather than customer data.
 Public definitions declare each domain and operation independently. Preserve one
 ordinary JAR and one artifact manifest for both domains. Update the pinned SDK
 commit and compatibility documentation together when SDK API signatures change.
-CI checks out only this repository and the pinned public SDK.
+Local verification uses only this repository and the pinned public SDK.
 
 This project is licensed under Apache License 2.0. The retained forge algorithms
 and focused tests were extracted from GivOps and are published under that license;
