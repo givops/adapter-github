@@ -4,6 +4,7 @@ import io.givops.catalog.ForgeProvider;
 
 import io.givops.forge.admin.ApiCheckOperations;
 import io.givops.forge.admin.ApiCheckOperations.Observation;
+import io.givops.forge.model.ForgeException;
 import io.givops.forge.model.ForgeModels.Source;
 import io.givops.forge.port.ForgeApiProbe;
 import io.givops.integrations.checks.CheckBudget;
@@ -79,9 +80,14 @@ class GitHubConnectionProbe implements ForgeApiProbe {
         var response = transport.getForCheck(uri, token, budget, apiBase);
         if (response.status() != 200) {
             var failure = GitHubErrors.remoteStatus(response.status(), response.headers(), response.body());
-            return new Observation(OperationStatus.FAILED, failure.getCode(), response.headers());
+            return new Observation(OperationStatus.FAILED, failure.getCode(), response.headers(), response.status());
         }
-        JsonNode body = payload.body(response);
+        JsonNode body;
+        try {
+            body = payload.body(response);
+        } catch (ForgeException failure) {
+            throw failure.withHttpResponse(response.status(), response.headers().firstValue("Content-Type").orElse(null));
+        }
         if (body == null || body.isMissingNode()) throw GitHubErrors.invalidResponse();
         validate.accept(body);
         return null;

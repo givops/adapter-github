@@ -1,5 +1,7 @@
 package io.givops.forge.github;
 
+import io.givops.adapters.ConnectionClients;
+import org.springframework.beans.factory.ObjectProvider;
 import io.givops.adapters.ContextSigner;
 import io.givops.adapters.CredentialHost;
 import io.givops.forge.config.ForgeProperties;
@@ -17,9 +19,12 @@ import tools.jackson.databind.json.JsonMapper;
 public class GitHubConfiguration {
     @Bean GitHubForgeDefinition gitHubForgeDefinition(GitHubProperties runtime) { return new GitHubForgeDefinition(runtime); }
     @Bean GitHubTicketDefinition gitHubTicketDefinition(GitHubProperties runtime) { return new GitHubTicketDefinition(runtime); }
-    @Bean GitHubTransport gitHubTransport(ForgeProperties forge,TicketProperties ticket) {
-        return new GitHubTransport(forge.requestTimeout().compareTo(ticket.requestTimeout())<0 ? forge.requestTimeout() : ticket.requestTimeout(),
-                Math.min(forge.maxResponseBytes(),ticket.maxResponseBytes()));
+    @Bean GitHubTransport gitHubTransport(ForgeProperties forge, TicketProperties ticket, ObjectProvider<ConnectionClients> clients) {
+        var timeout = forge.requestTimeout().compareTo(ticket.requestTimeout()) < 0 ? forge.requestTimeout() : ticket.requestTimeout();
+        var client = java.net.http.HttpClient.newBuilder().connectTimeout(timeout)
+                .followRedirects(java.net.http.HttpClient.Redirect.NEVER).build();
+        return new GitHubTransport(client, Math.min(forge.maxResponseBytes(), ticket.maxResponseBytes()),
+                clients.getIfAvailable(() -> ConnectionClients.SYSTEM));
     }
     @Bean GitHubAdapter gitHubAdapter(ForgeProperties limits,GitHubTransport transport,JsonMapper mapper,Clock clock) { return new GitHubAdapter(limits,transport,mapper,clock); }
     @Bean GitHubConnectionProbe gitHubConnectionProbe(GitHubTransport transport,JsonMapper mapper,Clock clock) { return new GitHubConnectionProbe(transport,mapper,clock); }

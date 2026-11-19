@@ -56,7 +56,7 @@ class GitHubTransportTest {
         var script = new Script(request -> Reply.text(403, Map.of("Retry-After", List.of("42")), TOKEN));
         try (var transport = script.transport()) {
             assertThatThrownBy(() -> transport.get(API, TOKEN, new Gate()))
-                    .hasMessageContaining("Wait 42 seconds").hasMessageNotContaining(TOKEN);
+                    .hasMessageContaining("Wait 42 seconds").hasMessageContaining("HTTP 403").hasMessageNotContaining(TOKEN);
             script.handler = request -> Reply.text(403, Map.of(), "{\"message\":\"Secondary rate limit\"}");
             assertCode(() -> transport.get(API, TOKEN, new Gate()), "github_rate_limited");
             script.handler = request -> Reply.text(403, Map.of(), "{\"message\":\"Access denied\"}");

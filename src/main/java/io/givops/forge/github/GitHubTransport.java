@@ -1,5 +1,6 @@
 package io.givops.forge.github;
 
+import io.givops.adapters.ConnectionClients;
 import io.givops.forge.model.ForgeException;
 import io.givops.forge.port.ForgeRequestGate;
 import io.givops.integrations.checks.ConnectionCheckException;
@@ -25,6 +26,7 @@ import org.springframework.http.HttpStatus;
 final class GitHubTransport implements AutoCloseable {
     static final String REST_VERSION = "2026-03-10";
     private final HttpClient client;
+    private final ConnectionClients clients;
     private final long maxResponseBytes;
 
     GitHubTransport(Duration connectTimeout, long maxResponseBytes) {
@@ -33,6 +35,11 @@ final class GitHubTransport implements AutoCloseable {
     }
 
     GitHubTransport(HttpClient client, long maxResponseBytes) {
+        this(client, maxResponseBytes, ConnectionClients.SYSTEM);
+    }
+
+    GitHubTransport(HttpClient client, long maxResponseBytes, ConnectionClients clients) {
+        this.clients = clients;
         this.client = client;
         this.maxResponseBytes = maxResponseBytes;
     }
@@ -83,7 +90,8 @@ final class GitHubTransport implements AutoCloseable {
 
         Duration timeout = gate.beforeRequest();
         long started = System.nanoTime();
-        var pending = client.sendAsync(request.timeout(timeout).build(), info -> new LimitedBody(gate, maxResponseBytes));
+        var selected = clients.select(gate.connectionTarget(), uri, client);
+        var pending = selected.sendAsync(request.timeout(timeout).build(), info -> new LimitedBody(gate, maxResponseBytes));
         try {
             // Request timeout alone does not cover streaming a complete body.
             long remaining = Math.max(0, timeout.toNanos() - (System.nanoTime() - started));
@@ -109,13 +117,14 @@ final class GitHubTransport implements AutoCloseable {
             if (cause instanceof ConnectionCheckException failure) throw failure;
             gate.check();
             if (cause instanceof HttpTimeoutException) throw GitHubErrors.timeout();
-            throw GitHubErrors.connectionFailed();
+            throw GitHubErrors.connectionFailed().withTransportFailure(cause);
         }
     }
 
     private static Response requireOk(Response response) {
         if (response.status() != 200) {
-            throw GitHubErrors.remoteStatus(response.status(), response.headers(), response.body());
+            throw GitHubErrors.remoteStatus(response.status(), response.headers(), response.body())
+                    .withHttpResponse(response.status(), response.headers().firstValue("Content-Type").orElse(null));
         }
         return response;
     }

@@ -317,7 +317,7 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
             return new CapabilityInspection("GITHUB",capability,state,reason,product,profile,access.context(),clock.instant());
         } catch(ForgeException failure) {
             State state=Set.of("github_timeout","github_unavailable","github_transport_failed","github_rate_limited").contains(failure.getCode()) ? State.TEMPORARILY_UNAVAILABLE : State.UNKNOWN;
-            return new CapabilityInspection("GITHUB",capability,state,failure.getCode(),null,profile,access.context(),clock.instant());
+            return new CapabilityInspection("GITHUB",capability,state,failure.diagnosticEvidence() == null ? failure.getCode() : failure.diagnosticEvidence(),null,profile,access.context(),clock.instant());
         }
     }
     private GitHubUrls urls(GitHubCredentials.Captured captured,String id,String path) {
@@ -325,6 +325,9 @@ public final class GitHubTicketAdapter implements TicketProviderAdapter, TicketW
     }
     private ForgeRequestGate gate(GitHubCredentials.Captured captured,TicketRequestGate delegate) {
         return new ForgeRequestGate() {
+                @Override public io.givops.adapters.ConnectionTarget connectionTarget() {
+                    return io.givops.adapters.ConnectionTarget.ticketing(captured.source().instanceId());
+                }
             @Override public java.time.Duration beforeRequest() { credentials.require(captured.source(),captured,false); return delegate.beforeRequest(); }
             @Override public void receivedBytes(long count) { delegate.receivedBytes(count); }
             @Override public void acceptedObjects(int count) { delegate.acceptedObjects(count); }
