@@ -34,6 +34,12 @@ through the public port. Neither domain requires the other to be configured.
 Credential storage, encryption, authorization, destination approval, transaction
 freshness and persistence belong to the host. See [authentication](docs/authentication.md).
 
+For a GitHub Enterprise Server signed by your organisation's CA, use
+**Admin → Security → Trusted certificate authorities** on a GivOps installation
+with shared CA management. Add the public PEM once and retry **Check forge API**.
+The same CA applies to hosted ticketing calls. The per-site certificate-chain
+exception can stay unchecked. The server certificate must match the hostname.
+
 ## Native ticketing
 
 Bind a repository using its numeric repository ID and `owner/repository` path.

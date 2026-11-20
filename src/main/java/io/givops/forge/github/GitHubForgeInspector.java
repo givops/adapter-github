@@ -37,7 +37,7 @@ public final class GitHubForgeInspector implements ForgeCapabilityInspector {
                     case "github_api_unsupported" -> State.UNSUPPORTED;
                     default -> State.UNKNOWN;
                 };
-                return new CapabilityInspection("GITHUB",capability,state,failure.getCode(),null,profile,context,clock.instant());
+                return new CapabilityInspection("GITHUB",capability,state,failure.diagnosticEvidence() == null ? failure.getCode() : failure.diagnosticEvidence(),null,profile,context,clock.instant());
             }
         }
         if (source.projectId()==null || source.repositoryPath()==null) return new CapabilityInspection("GITHUB",capability,State.UNKNOWN,"Repository context required",null,profile,context,clock.instant());
@@ -63,7 +63,7 @@ public final class GitHubForgeInspector implements ForgeCapabilityInspector {
             return new CapabilityInspection("GITHUB",capability,state,"Repository metadata inspection",response.headers().firstValue("X-GitHub-Enterprise-Version").orElse(null),profile,context,clock.instant());
         } catch(ForgeException failure) {
             State state=Set.of("github_timeout","github_unavailable","github_transport_failed").contains(failure.getCode())?State.TEMPORARILY_UNAVAILABLE:State.UNKNOWN;
-            return new CapabilityInspection("GITHUB",capability,state,failure.getCode(),null,profile,context,clock.instant());
+            return new CapabilityInspection("GITHUB",capability,state,failure.diagnosticEvidence() == null ? failure.getCode() : failure.diagnosticEvidence(),null,profile,context,clock.instant());
         }
     }
 }
